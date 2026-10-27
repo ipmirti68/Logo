@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mırtı TV v101 JSON->M3U</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<style>body{background:#070b14;color:#fff;font-family:Arial;padding:10px}input,textarea,button{width:100%;margin:6px 0;padding:10px;border-radius:8px;border:1px solid #33486f;background:#0a1222;color:#fff}button{background:#d4b78f;color:#111;font-weight:800}pre{white-space:pre-wrap;background:#0a1222;padding:10px;border-radius:8px;max-height:60vh;overflow:auto;font-size:10px}</style>
+<title>Mırtı TV v102 JSON->M3U Fix</title>
+<style>body{background:#070b14;color:#fff;font-family:Arial;padding:12px}input,textarea,button{width:100%;margin:8px 0;padding:12px;border-radius:10px;border:1px solid #33486f;background:#0a1222;color:#fff;font-size:12px}button{background:#d4b78f;color:#111;font-weight:900;font-size:13px}pre{white-space:pre-wrap;background:#0a1222;padding:12px;border-radius:10px;max-height:55vh;overflow:auto;font-size:10px;border:1px solid #1e2f52}.ok{color:#00ff88}.err{color:#ff5555}</style>
 </head><body>
-<h3>JSON -> M3U Çevirici - patron_data.json için</h3>
+<h3 style="margin-bottom:4px">JSON -> M3U Çevirici v102</h3>
+<p style="font-size:10px;color:#8fb0ff;margin-bottom:8px">Foto'daki hata: Alttaki kutuya URL değil, JSON içeriği yapışır. Üstteki kutu URL için.</p>
 <input id="jsonUrl" value="https://raw.githubusercontent.com/sevdimcim/vod-max/refs/heads/main/patron_data.json">
-<button id="fetchBtn">JSON'u Çek ve M3U Yap</button>
-<textarea id="jsonIn" placeholder="JSON içeriğini buraya yapıştır - çekemezse"></textarea>
-<button id="convertBtn">Yapıştırdığını M3U Yap</button>
+<button id="fetchBtn">1- ÜSTTEKİ URL'DEN JSON'u Çek ve M3U Yap</button>
+<hr style="border-color:#1c2b4a;margin:10px 0">
+<textarea id="jsonIn" rows="4" placeholder="2- Eğer üstteki çekmezse: GitHub'da patron_data.json sayfasını aç, ham içeriği ( { ... } ) kopyala, BURAYA yapıştır - URL DEĞİL, JSON İÇERİĞİ"></textarea>
+<button id="convertBtn">2- Alttaki JSON İçeriğini M3U Yap</button>
 <pre id="out">#EXTM3U
-# Hazır - v101
+# Hazır v102 - Üstteki butona bas
 </pre>
 <button id="copyBtn">M3U'yu Kopyala</button>
-<button id="playBtn">Mırtı TV v100'de Oynat (AYAR'a atar)</button>
+<div id="stat" style="font-size:10px;color:#8fb0ff;margin-top:8px"></div>
 <script>
 function toM3U(json){
   let arr=[];
@@ -21,61 +22,74 @@ function toM3U(json){
   else if(json.data && Array.isArray(json.data)) arr=json.data;
   else if(json.channels) arr=json.channels;
   else if(json.items) arr=json.items;
-  else arr=Object.values(json).filter(v=>v && typeof v==='object');
+  else if(json.movies) arr=json.movies;
+  else if(json.vod) arr=json.vod;
+  else arr=Object.values(json).filter(v=>v && typeof v==='object' && (v.url||v.link||v.source||v.file||v.video));
 
   let m3u="#EXTM3U\n";
+  let c=0;
   arr.forEach(it=>{
-    let title=it.title||it.name||it.ad||it.baslik||it.file_name||"Film";
-    let logo=it.logo||it.poster||it.image||it.tvg_logo||it.thumb||"";
-    let url=it.url||it.link||it.source||it.stream||it.file||it.video||it.playUrl||"";
-    let group=it.group||it.category||it.genre||it.group_title||it.grup||"Film";
-    let id=it.id||"";
-    // url boşsa nested source içinde ara
+    let title=it.title||it.name||it.ad||it.baslik||it.file_name||it.original_title||"Film "+c;
+    let logo=it.logo||it.poster||it.image||it.tvg_logo||it.thumb||it.poster_path||"";
+    if(logo && logo.startsWith("/")) logo="https://image.tmdb.org/t/p/w500"+logo;
+    let url=it.url||it.link||it.source||it.stream||it.file||it.video||it.playUrl||it.watchUrl||"";
     if(!url && it.sources && it.sources[0]) url=it.sources[0].file||it.sources[0].url||"";
+    if(!url && it.stream_url) url=it.stream_url;
+    let group=it.group||it.category||it.genre||it.group_title||it.grup||it.type||"Film";
+    let id=it.id||c;
     if(!url) return;
-    m3u+=`#EXTINF:-1 tvg-id="${id}" tvg-name="${title}" tvg-logo="${logo}" group-title="${group}",${title}\n${url}\n`;
+    c++;
+    m3u+=`#EXTINF:-1 tvg-id="${id}" tvg-name="${title.replace(/"/g,'')}" tvg-logo="${logo}" group-title="${group}","${title.replace(/"/g,'')}"\n${url}\n`;
   });
-  return m3u;
+  return {m3u,count:c};
 }
 async function fetchJson(url){
-  let urls=[
+  let proxies=[
     "https://api.allorigins.win/raw?url="+encodeURIComponent(url),
     "https://corsproxy.io/?"+encodeURIComponent(url),
+    "https://api.codetabs.com/v1/proxy?quest="+encodeURIComponent(url),
     url
   ];
-  for(let u of urls){
+  for(let u of proxies){
     try{
+      document.getElementById("stat").textContent="Deneniyor: "+u.slice(0,80);
       let r=await fetch(u,{cache:"no-store"});
       if(!r.ok) continue;
       let t=await r.text();
       if(t.trim().startsWith("<!DOCTYPE")||t.trim().startsWith("<html")) continue;
+      if(t.length<10) continue;
       let j=JSON.parse(t);
       return j;
-    }catch(e){}
+    }catch(e){ console.log(e); }
   }
-  throw new Error("Çekilemedi");
+  throw new Error("GitHub engelledi - alttaki yönteme geç");
 }
 document.getElementById("fetchBtn").onclick=async()=>{
   let url=document.getElementById("jsonUrl").value.trim();
-  document.getElementById("out").textContent="Çekiliyor... "+url;
+  let out=document.getElementById("out");
+  out.textContent="Çekiliyor... "+url.slice(0,60);
   try{
     let j=await fetchJson(url);
-    let m3u=toM3U(j);
-    document.getElementById("out").textContent=m3u.slice(0,20000)+(m3u.length>20000?"\n... "+m3u.length+" karakter":"");
-    localStorage.setItem("mirti_json_m3u",m3u);
+    let res=toM3U(j);
+    out.textContent=res.m3u.slice(0,25000);
+    document.getElementById("stat").innerHTML="<span class='ok'>OK: "+res.count+" film/dizi bulundu - M3U hazır</span>";
+    localStorage.setItem("mirti_json_m3u",res.m3u);
   }catch(e){
-    document.getElementById("out").textContent="Hata: "+e.message+"\n\nJSON'u kopyalayıp alttaki alana yapıştır.";
+    out.textContent="Hata: "+e.message+"\n\nFoto'daki gibi yapma: Alttaki kutuya URL değil, JSON içeriğini yapıştır.\n\nGitHub'da patron_data.json'a gir, RAW'a bas, tüm { } içeriğini kopyala, alttaki büyük kutuya yapıştır, sonra 2. butona bas.";
+    document.getElementById("stat").innerHTML="<span class='err'>"+e.message+"</span>";
   }
 };
 document.getElementById("convertBtn").onclick=()=>{
+  let raw=document.getElementById("jsonIn").value.trim();
+  if(!raw){ document.getElementById("out").textContent="Alttaki kutu boş - JSON içeriğini yapıştır"; return; }
+  if(raw.startsWith("http")){ document.getElementById("out").textContent="HATA FOTODAKİ GİBİ: Alttaki kutuya URL yapıştırdın! URL üstteki kutuya. Alttaki kutuya { } ile başlayan JSON içeriğini yapıştır."; return; }
   try{
-    let j=JSON.parse(document.getElementById("jsonIn").value);
-    let m3u=toM3U(j);
-    document.getElementById("out").textContent=m3u.slice(0,20000);
-    localStorage.setItem("mirti_json_m3u",m3u);
-  }catch(e){ document.getElementById("out").textContent="JSON parse hata: "+e.message; }
+    let j=JSON.parse(raw);
+    let res=toM3U(j);
+    document.getElementById("out").textContent=res.m3u.slice(0,25000);
+    document.getElementById("stat").innerHTML="<span class='ok'>OK: "+res.count+" film bulundu</span>";
+  }catch(e){ document.getElementById("out").textContent="JSON parse hata: "+e.message+"\n\nİçeriğin { ile başlamalı, https ile değil."; }
 };
-document.getElementById("copyBtn").onclick=()=>{ navigator.clipboard.writeText(document.getElementById("out").textContent); alert("Kopyalandı"); };
-document.getElementById("playBtn").onclick=()=>{ alert("M3U kopyalandı - Mırtı TV v100 > AYAR > M3U içeriğini yapıştır'a yapıştır, Film ise otomatik Film (afiş) sekmesine düşer"); };
+document.getElementById("copyBtn").onclick=()=>{ navigator.clipboard.writeText(document.getElementById("out").textContent); alert("M3U kopyalandı - Mırtı TV > AYAR > M3U içeriğini yapıştır"); };
 </script>
 </body></html>
